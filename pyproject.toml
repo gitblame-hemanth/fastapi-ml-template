@@ -1,0 +1,36 @@
+[project]
+name = "fastapi-ml-template"
+version = "1.0.0"
+description = "Production-ready FastAPI ML serving template"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/__init__.py",
+    "src/main.py",
+    "src/models/hf_model.py",
+    "src/models/registry.py",
+    "src/api/dependencies.py",
+    "src/api/middleware/metrics.py",
+    "src/api/middleware/rate_limit.py",
+    "src/api/middleware/request_id.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
