@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from src.api.dependencies import verify_api_key
 from src.api.schemas import ModelInfoResponse
 
-router = APIRouter(prefix="/api/v1", tags=["model"])
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["model"],
+    dependencies=[Depends(verify_api_key)],
+)
 
 
 @router.get("/model/info", response_model=ModelInfoResponse)

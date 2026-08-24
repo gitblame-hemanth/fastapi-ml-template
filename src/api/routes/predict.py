@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from src.api.dependencies import verify_api_key
 from src.api.schemas import (
     BatchPredictionRequest,
     BatchPredictionResponse,
@@ -19,7 +21,11 @@ from src.api.schemas import (
 from src.core.config import get_settings
 from src.core.metrics import INFERENCE_COUNT, INFERENCE_TIME
 
-router = APIRouter(prefix="/api/v1", tags=["predictions"])
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["predictions"],
+    dependencies=[Depends(verify_api_key)],
+)
 logger = structlog.get_logger(__name__)
 
 
@@ -32,6 +38,18 @@ def _build_input(req: PredictionRequest) -> dict[str, Any]:
     raise HTTPException(
         status_code=422,
         detail="Provide either 'features' (for sklearn) or 'text' (for NLP models).",
+    )
+
+
+async def _run_inference(func: Any, arg: Any, timeout: float) -> Any:
+    """Run blocking inference in a worker thread, bounded by *timeout* seconds.
+
+    Raises:
+        asyncio.TimeoutError: If inference does not finish within *timeout*.
+    """
+    loop = asyncio.get_running_loop()
+    return await asyncio.wait_for(
+        loop.run_in_executor(None, func, arg), timeout=timeout
     )
 
 
@@ -87,10 +105,19 @@ async def predict(request: Request, body: PredictionRequest) -> PredictionRespon
     # Inference
     start = time.perf_counter()
     try:
-        result = model.predict(input_data)
+        result = await _run_inference(
+            model.predict, input_data, settings.INFERENCE_TIMEOUT
+        )
         elapsed = time.perf_counter() - start
         INFERENCE_TIME.labels(model_name=model.name).observe(elapsed)
         INFERENCE_COUNT.labels(model_name=model.name, status="success").inc()
+    except asyncio.TimeoutError as exc:
+        INFERENCE_COUNT.labels(model_name=model.name, status="timeout").inc()
+        logger.error("inference_timeout", timeout=settings.INFERENCE_TIMEOUT)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Inference exceeded {settings.INFERENCE_TIMEOUT}s timeout",
+        ) from exc
     except Exception as exc:
         INFERENCE_COUNT.labels(model_name=model.name, status="error").inc()
         logger.error("inference_error", error=str(exc))
@@ -112,15 +139,25 @@ async def predict_batch(
     request: Request, body: BatchPredictionRequest
 ) -> BatchPredictionResponse:
     """Run batch predictions through the loaded model."""
+    settings = get_settings()
     model = request.app.state.model
     inputs = [_build_input(item) for item in body.inputs]
 
     start = time.perf_counter()
     try:
-        results = model.predict_batch(inputs)
+        results = await _run_inference(
+            model.predict_batch, inputs, settings.INFERENCE_TIMEOUT
+        )
         elapsed = time.perf_counter() - start
         INFERENCE_TIME.labels(model_name=model.name).observe(elapsed)
         INFERENCE_COUNT.labels(model_name=model.name, status="success").inc(len(inputs))
+    except asyncio.TimeoutError as exc:
+        INFERENCE_COUNT.labels(model_name=model.name, status="timeout").inc(len(inputs))
+        logger.error("batch_inference_timeout", timeout=settings.INFERENCE_TIMEOUT)
+        raise HTTPException(
+            status_code=504,
+            detail=f"Batch inference exceeded {settings.INFERENCE_TIMEOUT}s timeout",
+        ) from exc
     except Exception as exc:
         INFERENCE_COUNT.labels(model_name=model.name, status="error").inc(len(inputs))
         logger.error("batch_inference_error", error=str(exc))
