@@ -7,7 +7,25 @@ import uuid
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.api.middleware import RateLimitMiddleware, RequestIdMiddleware
+from src.api.middleware import RateLimitMiddleware, RequestIDMiddleware
+from src.core.config import get_settings
+
+
+def _tiny_app() -> FastAPI:
+    """Build a minimal app wired with the same middleware as ``src.main``."""
+    app = FastAPI()
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(RequestIDMiddleware)
+
+    @app.get("/ping")
+    async def ping() -> dict[str, bool]:
+        return {"pong": True}
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "healthy"}
+
+    return app
 
 
 def test_request_id_generated_when_missing(client: TestClient) -> None:
@@ -35,23 +53,39 @@ def test_rate_limit_allows_under_limit(client: TestClient) -> None:
         assert resp.status_code == 200
 
 
-def test_rate_limit_blocks_over_limit(app) -> None:
-    """Requests exceeding the limit should get 429."""
-    # Build a minimal app with a tiny rate limit
-    tiny_app = FastAPI()
-    tiny_app.add_middleware(RateLimitMiddleware, max_requests=3, window_seconds=60)
-    tiny_app.add_middleware(RequestIdMiddleware)
+def test_rate_limit_blocks_over_limit(monkeypatch) -> None:
+    """Requests exceeding the limit get 429 with a Retry-After header."""
+    monkeypatch.setenv("APP_RATE_LIMIT_REQUESTS", "3")
+    monkeypatch.setenv("APP_RATE_LIMIT_WINDOW", "60")
+    get_settings.cache_clear()
+    try:
+        with TestClient(_tiny_app()) as c:
+            for i in range(3):
+                resp = c.get("/ping")
+                assert resp.status_code == 200, f"Request {i + 1} should pass"
 
-    # Add a simple endpoint
-    @tiny_app.get("/ping")
-    async def ping():
-        return {"pong": True}
-
-    with TestClient(tiny_app) as c:
-        for i in range(3):
             resp = c.get("/ping")
-            assert resp.status_code == 200, f"Request {i + 1} should pass"
+            assert resp.status_code == 429
+            assert "rate limit" in resp.json()["detail"].lower()
+            assert "retry-after" in resp.headers
+            assert int(resp.headers["retry-after"]) >= 1
+    finally:
+        get_settings.cache_clear()
 
-        resp = c.get("/ping")
-        assert resp.status_code == 429
-        assert "rate limit" in resp.json()["detail"].lower()
+
+def test_rate_limit_exempts_health_endpoints(monkeypatch) -> None:
+    """Health endpoints are never rate limited."""
+    monkeypatch.setenv("APP_RATE_LIMIT_REQUESTS", "1")
+    monkeypatch.setenv("APP_RATE_LIMIT_WINDOW", "60")
+    get_settings.cache_clear()
+    try:
+        with TestClient(_tiny_app()) as c:
+            # Exhaust the limit on a normal endpoint
+            assert c.get("/ping").status_code == 200
+            assert c.get("/ping").status_code == 429
+
+            # Health endpoint stays open regardless
+            for _ in range(5):
+                assert c.get("/health").status_code == 200
+    finally:
+        get_settings.cache_clear()

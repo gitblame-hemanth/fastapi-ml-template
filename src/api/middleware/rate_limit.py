@@ -1,7 +1,7 @@
 """Simple in-memory sliding-window rate limiter middleware.
 
-Uses Redis when available for distributed rate limiting; falls back to a
-per-process in-memory counter otherwise.
+Counters are kept per process, so in multi-replica deployments each
+replica enforces its own limit independently.
 """
 
 from __future__ import annotations
