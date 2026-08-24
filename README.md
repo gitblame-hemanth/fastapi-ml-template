@@ -25,6 +25,7 @@ A production-ready FastAPI template for deploying machine learning models as RES
 ```bash
 git clone https://github.com/gitblame-hemanth/fastapi-ml-template.git
 cd fastapi-ml-template
+cp .env.example .env
 docker-compose up --build
 ```
 
@@ -63,6 +64,8 @@ pytest --cov=src --cov-report=term-missing
 | `GET` | `/api/v1/model/info` | Currently loaded model metadata |
 | `POST` | `/api/v1/model/reload` | Hot-reload model from disk without restart |
 | `GET` | `/metrics` | Prometheus metrics endpoint |
+
+When `APP_API_KEY_ENABLED=true`, all `/api/v1/*` endpoints require a valid `X-API-Key` header. Health and metrics endpoints are always open.
 
 ### Examples
 
@@ -260,7 +263,7 @@ fastapi-ml-template/
 │   │   │   ├── health.py           # Health, readiness, liveness
 │   │   │   ├── model.py            # Model info and reload
 │   │   │   └── predict.py          # Single and batch prediction
-│   │   ├── dependencies.py         # FastAPI dependency injectors
+│   │   ├── dependencies.py         # Dependency providers: settings, model, auth
 │   │   └── schemas.py              # Pydantic request/response models
 │   ├── core/
 │   │   ├── config.py               # Settings via pydantic-settings
