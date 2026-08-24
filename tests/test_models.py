@@ -117,3 +117,22 @@ def test_sklearn_model_reload(sklearn_model) -> None:
     sklearn_model.load()  # reload (re-trains demo)
     assert sklearn_model._loaded is True
     assert sklearn_model._load_timestamp >= first_ts
+
+
+# ---------------------------------------------------------------------------
+# Registry tests
+# ---------------------------------------------------------------------------
+
+
+def test_registry_create_model_known() -> None:
+    from src.models.registry import create_model
+
+    model = create_model("sklearn_classifier", model_path=None)
+    assert model.name == "sklearn_classifier"
+
+
+def test_registry_unknown_model_raises() -> None:
+    from src.models.registry import create_model
+
+    with pytest.raises(ValueError, match="Unknown model"):
+        create_model("nonexistent_model")

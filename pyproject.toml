@@ -17,13 +17,7 @@ addopts = [
 source = ["src"]
 omit = [
     "src/__init__.py",
-    "src/main.py",
     "src/models/hf_model.py",
-    "src/models/registry.py",
-    "src/api/dependencies.py",
-    "src/api/middleware/metrics.py",
-    "src/api/middleware/rate_limit.py",
-    "src/api/middleware/request_id.py",
 ]
 
 [tool.coverage.report]
