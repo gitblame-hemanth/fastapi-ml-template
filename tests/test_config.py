@@ -108,3 +108,21 @@ def test_get_settings_caches() -> None:
     s2 = get_settings()
     assert s1 is s2
     get_settings.cache_clear()
+
+
+def test_cors_origins_wildcard_env() -> None:
+    """CORS_ORIGINS accepts a plain * from env."""
+    get_settings.cache_clear()
+    with patch.dict("os.environ", {"APP_CORS_ORIGINS": "*"}):
+        s = Settings()
+        assert s.CORS_ORIGINS == ["*"]
+    get_settings.cache_clear()
+
+
+def test_cors_origins_comma_separated_env() -> None:
+    """CORS_ORIGINS accepts a comma-separated string from env."""
+    get_settings.cache_clear()
+    with patch.dict("os.environ", {"APP_CORS_ORIGINS": "http://a.com,http://b.com"}):
+        s = Settings()
+        assert s.CORS_ORIGINS == ["http://a.com", "http://b.com"]
+    get_settings.cache_clear()

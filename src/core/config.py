@@ -1,9 +1,11 @@
 """Application configuration using pydantic-settings."""
 
+import json
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -42,8 +44,10 @@ class Settings(BaseSettings):
     # Inference
     INFERENCE_TIMEOUT: float = 30.0
 
-    # CORS
-    CORS_ORIGINS: list[str] = ["*"]
+    # CORS (NoDecode: raw env string is handed to the validator below
+    # instead of being JSON-parsed, so plain "*" and comma-separated
+    # values work)
+    CORS_ORIGINS: Annotated[list[str], NoDecode] = ["*"]
 
     # Logging
     LOG_LEVEL: str = "INFO"
@@ -52,7 +56,10 @@ class Settings(BaseSettings):
     @classmethod
     def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            stripped = v.strip()
+            if stripped.startswith("["):
+                return json.loads(stripped)
+            return [origin.strip() for origin in stripped.split(",") if origin.strip()]
         return v
 
     @field_validator("LOG_LEVEL", mode="before")
